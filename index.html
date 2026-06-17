@@ -272,6 +272,13 @@ body.dark .type-Giving{background:#241a40;color:#a698ff}
 .bud-prog{position:relative;background:var(--bg);border-radius:10px;height:18px;overflow:hidden}
 .bud-prog-fill{height:100%;border-radius:10px;transition:width .5s ease-out;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:9px;font-weight:700;min-width:0}
 body.dark .bud-prog{background:#1f2229}
+/* Empty state for type charts */
+.chart-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:20px;text-align:center}
+.chart-empty-icon{font-size:36px;margin-bottom:8px;opacity:.6}
+.chart-empty-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}
+.chart-empty-msg{font-size:11px;color:var(--muted);margin-bottom:12px;max-width:240px;line-height:1.4}
+.chart-empty-link{display:inline-block;padding:6px 14px;background:var(--accent);color:#fff;text-decoration:none;border-radius:6px;font-size:11px;font-weight:600;transition:opacity .2s}
+.chart-empty-link:hover{opacity:.85}
 </style>
 </head>
 <body>
@@ -921,13 +928,10 @@ const TYPE_COLORS = {Needs:'#4a6cf7',Wants:'#f39c12',Saving:'#00b894',Giving:'#6
 // === DASHBOARD TYPE CHARTS ===
 function renderTypeCharts(){
   const b=gBForMonth(getDMPfx()),bt=gBTForMonth(getDMPfx()),e=gE(),pfx=getDMPfx();
-  // Build category -> type map (use stored, fallback to default)
   const cats = Object.keys(b).length ? Object.keys(b) : DC;
   const catType={};cats.forEach(c=>{catType[c]=bt[c]||defaultType(c);});
-  // Sum budget by type
   const budgetByType={Needs:0,Wants:0,Saving:0,Giving:0};
   cats.forEach(c=>{budgetByType[catType[c]]+=(b[c]||0);});
-  // Sum actual spending by type (this month)
   const me=e.filter(x=>x.date.startsWith(pfx));
   const actualByType={Needs:0,Wants:0,Saving:0,Giving:0};
   me.forEach(x=>{const t=catType[x.category]||defaultType(x.category);actualByType[t]+=x.amount;});
@@ -935,14 +939,57 @@ function renderTypeCharts(){
   const colors=labels.map(l=>TYPE_COLORS[l]);
   const bc=document.body.classList.contains('dark')?'#252830':'#fff';
   const commonOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:9,padding:8,font:{size:11}}},tooltip:{callbacks:{label:ctx=>` ${ctx.label}: $${ctx.parsed.toLocaleString(undefined,{minimumFractionDigits:2})}`}}}};
-  // Budget chart
-  const bData=labels.map(l=>budgetByType[l]);
-  const bTotal=bData.reduce((s,v)=>s+v,0);
-  sC('typeBudget',new Chart(document.getElementById('typeBudgetChart'),{type:'doughnut',data:{labels,datasets:[{data:bData,backgroundColor:colors,borderWidth:2,borderColor:bc}]},options:bTotal>0?commonOpts:{...commonOpts,plugins:{...commonOpts.plugins,legend:{display:false}}}}));
-  // Actual chart
-  const aData=labels.map(l=>actualByType[l]);
-  const aTotal=aData.reduce((s,v)=>s+v,0);
-  sC('typeActual',new Chart(document.getElementById('typeActualChart'),{type:'doughnut',data:{labels,datasets:[{data:aData,backgroundColor:colors,borderWidth:2,borderColor:bc}]},options:aTotal>0?commonOpts:{...commonOpts,plugins:{...commonOpts.plugins,legend:{display:false}}}}));
+
+  function renderChartOrEmpty(canvasId, chartKey, data, total, emptyCfg){
+    // Find the chart container (works whether canvas or empty-state is currently inside)
+    let container = document.getElementById(canvasId)?.parentElement;
+    if(!container){
+      const emptyEl = document.getElementById(canvasId+'-empty');
+      if(emptyEl) container = emptyEl.parentElement;
+    }
+    if(!container) return;
+
+    if(total > 0){
+      // Make sure canvas exists, then render chart
+      if(!document.getElementById(canvasId)){
+        container.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+      }
+      sC(chartKey, new Chart(document.getElementById(canvasId), {
+        type:'doughnut',
+        data:{labels, datasets:[{data, backgroundColor:colors, borderWidth:2, borderColor:bc}]},
+        options: commonOpts
+      }));
+    } else {
+      // Swap in empty-state message
+      kC(chartKey);
+      container.innerHTML = `<div class="chart-empty" id="${canvasId}-empty">
+        <div class="chart-empty-icon">${emptyCfg.icon}</div>
+        <div class="chart-empty-title">${emptyCfg.title}</div>
+        <div class="chart-empty-msg">${emptyCfg.msg}</div>
+        <a href="#" class="chart-empty-link" onclick="showPage('${emptyCfg.page}');return false;">${emptyCfg.linkText} →</a>
+      </div>`;
+    }
+  }
+
+  const bData = labels.map(l => budgetByType[l]);
+  const bTotal = bData.reduce((s,v) => s+v, 0);
+  renderChartOrEmpty('typeBudgetChart', 'typeBudget', bData, bTotal, {
+    icon:'💡',
+    title:'No budget set yet',
+    msg:'Set up category budgets to see your Needs / Wants / Saving / Giving breakdown.',
+    linkText:'Go to Budget',
+    page:'budget'
+  });
+
+  const aData = labels.map(l => actualByType[l]);
+  const aTotal = aData.reduce((s,v) => s+v, 0);
+  renderChartOrEmpty('typeActualChart', 'typeActual', aData, aTotal, {
+    icon:'📍',
+    title:'No spending logged this month',
+    msg:'Log expenses to see how your actual spending breaks down by type.',
+    linkText:'Log an Expense',
+    page:'expenses'
+  });
 }
 
 // === MOBILE HOLDING CARDS (re-rendered after renderInv) ===
